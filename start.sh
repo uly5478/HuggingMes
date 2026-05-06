@@ -322,8 +322,8 @@ urllib.request.urlopen(req, timeout=10).read()
 PY
 fi
 
-echo "Launching Hermes dashboard on 127.0.0.1:${DASHBOARD_PORT}..."
-(hermes dashboard --host 127.0.0.1 --insecure 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
+echo "Launching Hermes dashboard on 0.0.0.0:${DASHBOARD_PORT}..."
+(hermes dashboard --host 127.0.0.1 --insecure --tui --no-open 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
 DASHBOARD_PID=$!
 
 # ── Launch gateway ──
