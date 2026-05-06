@@ -669,3 +669,77 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`HuggingMes dashboard listening on 0.0.0.0:${PORT}`);
 });
+
+// ── WebSocket upgrade proxy ──
+// Dashboard chat and TUI use WebSocket connections to the dashboard/gateway.
+// HF Spaces only exposes one port, so we must proxy WS upgrades through here.
+server.on("upgrade", (req, socket, head) => {
+  const parsed = new URL(req.url, "http://localhost");
+  const path = parsed.pathname;
+
+  // Determine target port based on path
+  let targetPort = null;
+  let targetPath = req.url;
+
+  // Dashboard WebSocket (chat TUI, live updates)
+  if (path.startsWith(`${APP_BASE}/`)) {
+    if (!isAuthorized(req)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    targetPort = DASHBOARD_PORT;
+    targetPath = path.replace(/^\/app/, "") + parsed.search;
+  } else if (
+    path.startsWith("/api/") ||
+    path.startsWith("/ws") ||
+    path.startsWith("/socket") ||
+    path.startsWith("/trpc")
+  ) {
+    if (!isAuthorized(req)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    targetPort = DASHBOARD_PORT;
+  } else if (path.startsWith("/v1/")) {
+    if (!isAuthorized(req)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    targetPort = GATEWAY_PORT;
+  }
+
+  if (!targetPort) {
+    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  // TCP-level proxy: connect to upstream and pipe both directions
+  const upstream = net.createConnection(
+    { host: GATEWAY_HOST, port: targetPort },
+    () => {
+      // Reconstruct the raw HTTP upgrade request to send to upstream
+      const reqLine = `${req.method} ${targetPath} HTTP/1.1\r\n`;
+      const headers = Object.entries(req.headers)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\r\n");
+      upstream.write(reqLine + headers + "\r\n\r\n");
+      if (head && head.length) upstream.write(head);
+      // Bi-directional pipe
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+    },
+  );
+
+  upstream.on("error", () => {
+    socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    socket.destroy();
+  });
+
+  socket.on("error", () => {
+    upstream.destroy();
+  });
+});
