@@ -349,10 +349,6 @@ urllib.request.urlopen(req, timeout=10).read()
 PY
 fi
 
-echo "Launching Hermes dashboard on 0.0.0.0:${DASHBOARD_PORT}..."
-(hermes dashboard --host 0.0.0.0 --insecure --tui --no-open 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
-DASHBOARD_PID=$!
-
 # ── Launch gateway ──
 echo "Launching Hermes gateway..."
 (hermes gateway run 2>&1 | tee -a "$HERMES_HOME/logs/gateway.log") &
@@ -378,6 +374,12 @@ if [ "$ready" != "true" ]; then
   tail -40 "$HERMES_HOME/logs/gateway.log" || true
   exit 1
 fi
+
+# ── Launch dashboard AFTER gateway is ready (TUI chat needs gateway) ──
+echo "Launching Hermes dashboard on 0.0.0.0:${DASHBOARD_PORT}..."
+export TERM="${TERM:-xterm-256color}"
+(hermes dashboard --host 0.0.0.0 --insecure --tui --no-open 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
+DASHBOARD_PID=$!
 
 if [ -n "${HF_TOKEN:-}" ]; then
   python3 -u "$APP_DIR/hermes-sync.py" loop &
