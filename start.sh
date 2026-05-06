@@ -323,7 +323,7 @@ PY
 fi
 
 echo "Launching Hermes dashboard on 0.0.0.0:${DASHBOARD_PORT}..."
-(hermes dashboard --host 127.0.0.1 --insecure --tui --no-open 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
+(hermes dashboard --host 0.0.0.0 --insecure --tui --no-open 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
 DASHBOARD_PID=$!
 
 # ── Launch gateway ──
