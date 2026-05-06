@@ -269,6 +269,11 @@ browser_cfg.setdefault("inactivity_timeout", 120)
 if os.environ.get("BROWSERBASE_API_KEY") and os.environ.get("BROWSERBASE_PROJECT_ID"):
     browser_cfg["cloud_provider"] = "browserbase"
 
+# Configure CDP URL for remote Chrome (e.g. via ngrok/cloudflare tunnel)
+cdp_url = os.environ.get("BROWSER_CDP_URL", "").strip()
+if cdp_url:
+    browser_cfg["cdp_url"] = cdp_url
+
 # Ensure browser toolset is included in platform_toolsets
 platform_toolsets = config.setdefault("platform_toolsets", {})
 for platform_key in ("cli", "telegram", "discord", "whatsapp", "slack"):
