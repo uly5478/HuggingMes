@@ -67,14 +67,23 @@ RUN chmod +x \
     /opt/huggingmes/cloudflare-proxy-setup.py \
     /opt/huggingmes/cloudflare-keepalive-setup.py
 
+# ── Permissions: ensure hermes user can access everything ──
+RUN chmod -R a+rX /opt/hermes \
+    && mkdir -p /opt/data \
+    && chown -R hermes:hermes /opt/data /opt/huggingmes
+
 # ── Environment ──
 ENV HERMES_HOME=/opt/data \
     HUGGINGMES_APP_DIR=/opt/huggingmes \
     HERMES_AGENT_VERSION=${HERMES_AGENT_VERSION} \
     PYTHONUNBUFFERED=1 \
-    TERM=xterm-256color
+    TERM=xterm-256color \
+    HERMES_TUI_DIR=/opt/hermes/ui-tui
 
 EXPOSE 7861
+
+# ── Run as hermes user (matches base image design) ──
+USER hermes
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s \
   CMD curl -fsS http://localhost:7861/health || exit 1

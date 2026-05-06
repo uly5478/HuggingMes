@@ -378,6 +378,8 @@ fi
 # ── Launch dashboard AFTER gateway is ready (TUI chat needs gateway) ──
 echo "Launching Hermes dashboard on 0.0.0.0:${DASHBOARD_PORT}..."
 export TERM="${TERM:-xterm-256color}"
+export HOME="${HOME:-/opt/data/home}"
+mkdir -p "${HOME}"
 (hermes dashboard --host 0.0.0.0 --insecure --tui --no-open 2>&1 | tee -a "$HERMES_HOME/logs/dashboard.log") &
 DASHBOARD_PID=$!
 
