@@ -50,8 +50,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
 RUN /opt/hermes/.venv/bin/python -m playwright install chromium --with-deps \
     && chmod -R a+rX /opt/hermes/.playwright
 
-# ── Install agent-browser CLI (for local browser mode) ──
-RUN npm install -g agent-browser
+# ── Install agent-browser CLI + download its own Chrome ──
+RUN npm install -g agent-browser \
+    && agent-browser install
 
 # ── Copy application files ──
 COPY --chown=hermes:hermes start.sh /opt/huggingmes/start.sh

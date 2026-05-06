@@ -25,6 +25,15 @@ export API_SERVER_PORT="$GATEWAY_API_PORT"
 export GATEWAY_HEALTH_URL="${GATEWAY_HEALTH_URL:-http://127.0.0.1:${GATEWAY_API_PORT}}"
 export TELEGRAM_WEBHOOK_PORT
 
+# ── Browser automation: ensure agent-browser can find Chromium ──
+if [ -z "${AGENT_BROWSER_EXECUTABLE_PATH:-}" ]; then
+  # Try Playwright's Chromium first
+  PW_CHROME=$(find "${PLAYWRIGHT_BROWSERS_PATH:-/opt/hermes/.playwright}" -name "chrome" -path "*/chrome-linux/*" 2>/dev/null | head -1)
+  if [ -n "$PW_CHROME" ] && [ -x "$PW_CHROME" ]; then
+    export AGENT_BROWSER_EXECUTABLE_PATH="$PW_CHROME"
+  fi
+fi
+
 echo ""
 echo "  ╔══════════════════════════════════════════╗"
 echo "  ║        💬 HuggingMes Hermes Gateway      ║"
@@ -251,6 +260,20 @@ if custom_base and model_name:
 config.setdefault("terminal", {})["cwd"] = os.environ.get("MESSAGING_CWD", str(home / "workspace"))
 config.setdefault("compression", {}).setdefault("enabled", True)
 config.setdefault("display", {}).setdefault("background_process_notifications", os.environ.get("HERMES_BACKGROUND_NOTIFICATIONS", "result"))
+
+# ── Browser automation: enable browser toolset ──
+browser_cfg = config.setdefault("browser", {})
+browser_cfg.setdefault("inactivity_timeout", 120)
+
+# Ensure browser toolset is included in platform_toolsets
+platform_toolsets = config.setdefault("platform_toolsets", {})
+for platform_key in ("cli", "telegram", "discord", "whatsapp", "slack"):
+    preset = platform_toolsets.get(platform_key)
+    # If using a preset list, ensure browser is included
+    if isinstance(preset, list) and "browser" not in preset:
+        # Only add if not already using a hermes-* preset (which includes browser)
+        if not any(p.startswith("hermes-") for p in preset):
+            preset.append("browser")
 
 platforms = config.setdefault("platforms", {})
 
