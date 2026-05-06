@@ -265,6 +265,10 @@ config.setdefault("display", {}).setdefault("background_process_notifications", 
 browser_cfg = config.setdefault("browser", {})
 browser_cfg.setdefault("inactivity_timeout", 120)
 
+# Configure Browserbase as cloud browser provider if credentials are set
+if os.environ.get("BROWSERBASE_API_KEY") and os.environ.get("BROWSERBASE_PROJECT_ID"):
+    browser_cfg["cloud_provider"] = "browserbase"
+
 # Ensure browser toolset is included in platform_toolsets
 platform_toolsets = config.setdefault("platform_toolsets", {})
 for platform_key in ("cli", "telegram", "discord", "whatsapp", "slack"):

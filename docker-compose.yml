@@ -15,6 +15,11 @@ services:
       TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
       HF_TOKEN: ${HF_TOKEN:-}
       SPACE_HOST: ${SPACE_HOST:-localhost:7861}
+      # Browserbase cloud browser (anti-detection + CAPTCHA solving)
+      BROWSERBASE_API_KEY: ${BROWSERBASE_API_KEY:-}
+      BROWSERBASE_PROJECT_ID: ${BROWSERBASE_PROJECT_ID:-}
+      BROWSERBASE_PROXIES: ${BROWSERBASE_PROXIES:-true}
+      BROWSERBASE_ADVANCED_STEALTH: ${BROWSERBASE_ADVANCED_STEALTH:-false}
     volumes:
       - huggingmes-data:/opt/data
 
