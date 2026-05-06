@@ -1,0 +1,11 @@
+# HuggingMes - Python dependencies for Hermes Agent with browser automation
+# Install with: uv pip install --no-cache-dir -r requirements.txt
+
+# Core HuggingFace integration
+huggingface_hub
+
+# Hermes Agent with web dashboard + PTY support
+hermes-agent[web,pty]
+
+# Browser automation (Playwright Python bindings)
+playwright
