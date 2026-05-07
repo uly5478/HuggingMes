@@ -55,7 +55,14 @@ PY
 fi
 
 # ── Setup directories ──
-mkdir -p "$HERMES_HOME"/{cron,sessions,logs,hooks,memories,skills,skins,plans,workspace,home}
+mkdir -p "$HERMES_HOME"/{cron,sessions,logs,hooks,memories,skills,skins,plans,workspace,home,plugins}
+
+# Redirect Hermes plugin dir into volume so plugins survive container restarts
+if [ ! -L "${HOME}/.hermes/plugins" ]; then
+  mkdir -p "${HOME}/.hermes"
+  rm -rf "${HOME}/.hermes/plugins"
+  ln -sfn "$HERMES_HOME/plugins" "${HOME}/.hermes/plugins"
+fi
 
 # ── Restore workspace/state from HF Dataset ──
 if [ -n "${HF_TOKEN:-}" ]; then
@@ -239,25 +246,25 @@ provider_name = os.environ.get("PROVIDER_FOR_CONFIG", "").strip()
 
 if model_name:
     model = config.setdefault("model", {})
-    model["default"] = model_name
+    model.setdefault("default", model_name)
     if provider_name:
-        model["provider"] = provider_name
+        model.setdefault("provider", provider_name)
 else:
     model = config.get("model", {})
     print("No LLM_MODEL/HERMES_MODEL set; leaving Hermes model config unchanged.")
 
 custom_base = os.environ.get("CUSTOM_BASE_URL", "").strip()
 if custom_base and model_name:
-    model["base_url"] = custom_base.rstrip("/")
+    model.setdefault("base_url", custom_base.rstrip("/"))
     if os.environ.get("CUSTOM_API_KEY"):
-        model["api_key"] = os.environ["CUSTOM_API_KEY"]
+        model.setdefault("api_key", os.environ["CUSTOM_API_KEY"])
     try:
-        model["context_length"] = int(os.environ.get("CUSTOM_MODEL_CONTEXT_LENGTH", "131072"))
-        model["max_tokens"] = int(os.environ.get("CUSTOM_MODEL_MAX_TOKENS", "8192"))
+        model.setdefault("context_length", int(os.environ.get("CUSTOM_MODEL_CONTEXT_LENGTH", "131072")))
+        model.setdefault("max_tokens", int(os.environ.get("CUSTOM_MODEL_MAX_TOKENS", "8192")))
     except ValueError:
         pass
 
-config.setdefault("terminal", {})["cwd"] = os.environ.get("MESSAGING_CWD", str(home / "workspace"))
+config.setdefault("terminal", {}).setdefault("cwd", os.environ.get("MESSAGING_CWD", str(home / "workspace")))
 config.setdefault("compression", {}).setdefault("enabled", True)
 config.setdefault("display", {}).setdefault("background_process_notifications", os.environ.get("HERMES_BACKGROUND_NOTIFICATIONS", "result"))
 
@@ -293,17 +300,17 @@ platforms = config.setdefault("platforms", {})
 
 if os.environ.get("TELEGRAM_BOT_TOKEN"):
     telegram = platforms.setdefault("telegram", {})
-    telegram["enabled"] = True
+    telegram.setdefault("enabled", True)
     extra = telegram.setdefault("extra", {})
     if os.environ.get("TELEGRAM_BASE_URL"):
-        extra["base_url"] = os.environ["TELEGRAM_BASE_URL"]
-        extra["base_file_url"] = os.environ.get("TELEGRAM_BASE_FILE_URL") or os.environ["TELEGRAM_BASE_URL"]
+        extra.setdefault("base_url", os.environ["TELEGRAM_BASE_URL"])
+        extra.setdefault("base_file_url", os.environ.get("TELEGRAM_BASE_FILE_URL") or os.environ["TELEGRAM_BASE_URL"])
     if os.environ.get("TELEGRAM_ALLOWED_USERS"):
-        config.setdefault("telegram", {})["allow_from"] = [
+        config.setdefault("telegram", {}).setdefault("allow_from", [
             item.strip()
             for item in os.environ["TELEGRAM_ALLOWED_USERS"].split(",")
             if item.strip()
-        ]
+        ])
 
 path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 path.chmod(0o600)
