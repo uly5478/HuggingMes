@@ -261,6 +261,11 @@ config.setdefault("terminal", {})["cwd"] = os.environ.get("MESSAGING_CWD", str(h
 config.setdefault("compression", {}).setdefault("enabled", True)
 config.setdefault("display", {}).setdefault("background_process_notifications", os.environ.get("HERMES_BACKGROUND_NOTIFICATIONS", "result"))
 
+# ── Skills: disable auto-creation to avoid HF dataset security flags ──
+skills_cfg = config.setdefault("skills", {})
+skills_cfg["creation_nudge_interval"] = 0
+skills_cfg.setdefault("guard_agent_created", True)
+
 # ── Browser automation: enable browser toolset ──
 browser_cfg = config.setdefault("browser", {})
 browser_cfg.setdefault("inactivity_timeout", 120)
