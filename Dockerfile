@@ -9,7 +9,7 @@ USER root
 # ── System dependencies ──
 # The base image already has: python3, nodejs, npm, ripgrep, ffmpeg, git,
 # openssh-client, docker-cli, tini, build-essential, gcc, python3-dev, libffi-dev
-# We add: curl, jq, and Chromium/Playwright browser dependencies
+# We add: curl, jq, Chromium/Playwright browser dependencies, Xvfb + x11vnc for VNC
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -37,6 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-color-emoji \
     xdg-utils \
     wget \
+    # VNC stack: virtual display + VNC server
+    xvfb \
+    x11vnc \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python dependencies ──
@@ -53,6 +56,11 @@ RUN /opt/hermes/.venv/bin/python -m playwright install chromium --with-deps \
 # ── Install agent-browser CLI + download its own Chrome ──
 RUN npm install -g agent-browser \
     && agent-browser install
+
+# ── Install noVNC for browser-based VNC access ──
+RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
+    && git clone --depth 1 https://github.com/novnc/websockify /opt/novnc/utils/websockify \
+    && ln -s /opt/novnc/vnc.html /opt/novnc/index.html
 
 # ── Copy application files ──
 COPY --chown=hermes:hermes start.sh /opt/huggingmes/start.sh
@@ -108,6 +116,7 @@ PY
 
 # ── Permissions: ensure hermes user can access everything ──
 RUN chmod -R a+rX /opt/hermes \
+    && chmod -R a+rX /opt/novnc \
     && mkdir -p /opt/data \
     && chown -R hermes:hermes /opt/data /opt/huggingmes
 
@@ -117,7 +126,8 @@ ENV HERMES_HOME=/opt/data \
     HERMES_AGENT_VERSION=${HERMES_AGENT_VERSION} \
     PYTHONUNBUFFERED=1 \
     TERM=xterm-256color \
-    HERMES_TUI_DIR=/opt/hermes/ui-tui
+    HERMES_TUI_DIR=/opt/hermes/ui-tui \
+    CHROME_VNC_ENABLED=true
 
 EXPOSE 7861
 

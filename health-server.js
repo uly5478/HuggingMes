@@ -307,7 +307,7 @@ async function statusPayload() {
   const telegramWebhook =
     !!process.env.TELEGRAM_WEBHOOK_URL &&
     (await canConnect(TELEGRAM_WEBHOOK_PORT));
-  const chromeVnc = await canConnect(3000); // Chrome VNC port
+  const chromeVnc = await canConnect(6080); // noVNC WebSocket port
   const sync = readJson(
     SYNC_STATUS_FILE,
     process.env.HF_TOKEN
@@ -331,7 +331,7 @@ async function statusPayload() {
       gateway: GATEWAY_PORT,
       dashboard: DASHBOARD_PORT,
       telegramWebhook: TELEGRAM_WEBHOOK_PORT,
-      chromeVnc: 3000,
+      chromeVnc: 6080,
     },
     telegram: {
       configured: !!process.env.TELEGRAM_BOT_TOKEN,
@@ -425,9 +425,8 @@ function renderDashboard(data) {
         : "Not configured";
   const serviceOk = data.gateway && data.dashboard;
 
-  // Check if Chrome VNC is available
+  // Check if Chrome VNC is available (noVNC on port 6080)
   const chromeVncAvailable = data.chromeVnc || false;
-  const chromeVncUrl = chromeVncAvailable ? `http://localhost:3000` : null;
 
   const tiles = [
     renderTile({
@@ -487,11 +486,9 @@ function renderDashboard(data) {
         chromeVncAvailable ? "Online" : "Offline",
         chromeVncAvailable ? "ok" : "off",
       ),
-      detail: chromeVncAvailable
-        ? `VNC on port 5900`
-        : `Not available`,
+      detail: chromeVncAvailable ? "noVNC ready at /vnc" : "Not running",
       tone: chromeVncAvailable ? "ok" : "off",
-      meta: chromeVncAvailable ? "Ready for use" : "Start chrome-vnc service",
+      meta: chromeVncAvailable ? "Set CHROME_VNC_ENABLED=true to enable" : "Set CHROME_VNC_ENABLED=true to enable",
     }),
   ].join("");
 
@@ -549,7 +546,7 @@ function renderDashboard(data) {
       <div class="subtitle">Self-hosted - Hermes Agent</div>
     </header>
     <a class="hero-action" href="${APP_BASE}/" target="_blank" rel="noopener noreferrer">Open Hermes Agent -></a>
-    ${chromeVncAvailable ? `<a class="hero-action" href="${chromeVncUrl}" target="_blank" rel="noopener noreferrer">Open Chrome VNC -></a>` : ''}
+    ${chromeVncAvailable ? `<a class="hero-action" href="/vnc" target="_blank" rel="noopener noreferrer">Open Chrome VNC -></a>` : ""}
     <section class="overview">
       ${tiles}
     </section>
@@ -682,6 +679,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Chrome VNC proxy (noVNC over HTTP) ──
+  if (path === "/vnc" || path.startsWith("/vnc/")) {
+    if (!requireAuth(req, res)) return;
+    // Proxy to noVNC (port 6080)
+    proxyRequest(req, res, 6080, (p) => p.replace(/^\/vnc/, ""));
+    return;
+  }
+
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
   res.end("Not found");
 });
@@ -729,6 +734,14 @@ server.on("upgrade", (req, socket, head) => {
       return;
     }
     targetPort = GATEWAY_PORT;
+  } else if (path.startsWith("/vnc/")) {
+    if (!isAuthorized(req)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    targetPort = 6080; // noVNC WebSocket port
+    targetPath = path.replace(/^\/vnc/, "") + parsed.search;
   }
 
   if (!targetPort) {

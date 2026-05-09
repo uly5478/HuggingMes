@@ -352,6 +352,49 @@ trap graceful_shutdown SIGTERM SIGINT
 node "$APP_DIR/health-server.js" &
 HEALTH_PID=$!
 
+# ── Start Chrome VNC stack (Xvfb → Chrome → x11vnc → noVNC) ──
+if [ "${CHROME_VNC_ENABLED:-false}" = "true" ]; then
+  echo "Starting Chrome VNC stack..."
+
+  # 1. Find Playwright Chromium
+  PW_CHROME=$(find "${PLAYWRIGHT_BROWSERS_PATH:-/opt/hermes/.playwright}" -name "chrome" -path "*/chrome-linux/*" 2>/dev/null | head -1)
+  if [ -z "$PW_CHROME" ]; then
+    echo "Warning: Playwright Chromium not found, Chrome VNC disabled."
+  else
+    # 2. Start virtual display
+    Xvfb :99 -screen 0 1920x1080x24 -ac &
+    export DISPLAY=:99
+    sleep 1
+
+    # 3. Start Chrome on virtual display
+    "$PW_CHROME" \
+      --no-sandbox \
+      --disable-setuid-sandbox \
+      --disable-dev-shm-usage \
+      --disable-gpu \
+      --remote-debugging-port=9222 \
+      --remote-debugging-address=127.0.0.1 \
+      --user-data-dir="$HERMES_HOME/chrome-user-data" \
+      --window-size=1920,1080 \
+      "https://www.reddit.com" &>/dev/null &
+    sleep 2
+
+    # 4. Start x11vnc (VNC server on port 5900)
+    x11vnc -display :99 -nopw -listen 127.0.0.1 -rfbport 5900 \
+      -shared -forever -quiet &>/dev/null &
+    sleep 1
+
+    # 5. Start noVNC websockify (WebSocket proxy: port 6080 → VNC port 5900)
+    python3 /opt/novnc/utils/websockify/websockify.py \
+      --web /opt/novnc 6080 127.0.0.1:5900 &>/dev/null &
+
+    echo "Chrome VNC ready: Xvfb :99 → Chrome → x11vnc :5900 → noVNC :6080"
+
+    # Tell Hermes Agent to use this Chrome via CDP
+    export BROWSER_CDP_URL="http://127.0.0.1:9222"
+  fi
+fi
+
 if [ -n "${WEBHOOK_URL:-}" ]; then
   python3 - <<'PY' >/dev/null 2>&1 &
 import json, os, urllib.request
