@@ -8,7 +8,6 @@ const crypto = require("crypto");
 const PORT = Number(process.env.PORT || 7861);
 const GATEWAY_PORT = Number(process.env.API_SERVER_PORT || 8642);
 const DASHBOARD_PORT = Number(process.env.DASHBOARD_PORT || 9119);
-const TELEGRAM_WEBHOOK_PORT = Number(process.env.TELEGRAM_WEBHOOK_PORT || 8765);
 const GATEWAY_HOST = "127.0.0.1";
 const startTime = Date.now();
 const API_SERVER_KEY = process.env.API_SERVER_KEY || "";
@@ -17,8 +16,6 @@ const LOGIN_PATH = "/login";
 const SESSION_COOKIE = "huggingmes_session";
 
 const SYNC_STATUS_FILE = "/tmp/huggingmes-sync-status.json";
-const CLOUDFLARE_KEEPALIVE_STATUS_FILE =
-  "/tmp/huggingmes-cloudflare-keepalive-status.json";
 
 function canConnect(port, host = GATEWAY_HOST, timeoutMs = 600) {
   return new Promise((resolve) => {
@@ -304,9 +301,6 @@ function formatUptime(ms) {
 async function statusPayload() {
   const gateway = await canConnect(GATEWAY_PORT);
   const dashboard = await canConnect(DASHBOARD_PORT);
-  const telegramWebhook =
-    !!process.env.TELEGRAM_WEBHOOK_URL &&
-    (await canConnect(TELEGRAM_WEBHOOK_PORT));
   const chromeVnc = await canConnect(6080); // noVNC WebSocket port
   const sync = readJson(
     SYNC_STATUS_FILE,
@@ -330,15 +324,7 @@ async function statusPayload() {
       public: PORT,
       gateway: GATEWAY_PORT,
       dashboard: DASHBOARD_PORT,
-      telegramWebhook: TELEGRAM_WEBHOOK_PORT,
       chromeVnc: 6080,
-    },
-    telegram: {
-      configured: !!process.env.TELEGRAM_BOT_TOKEN,
-      webhook: !!process.env.TELEGRAM_WEBHOOK_URL,
-      webhookUrl: process.env.TELEGRAM_WEBHOOK_URL || "",
-      webhookListening: telegramWebhook,
-      proxy: process.env.CLOUDFLARE_PROXY_URL || "",
     },
     model:
       process.env.MODEL_FOR_CONFIG ||
@@ -350,16 +336,7 @@ async function statusPayload() {
       process.env.HERMES_INFERENCE_PROVIDER ||
       "auto",
     backup: sync,
-    keepalive: readJson(CLOUDFLARE_KEEPALIVE_STATUS_FILE, null),
   };
-}
-
-function badge(label, state) {
-  return `<span class="badge ${state ? "ok" : "off"}">${escapeHtml(label)}</span>`;
-}
-
-function toneBadge(label, tone = "neutral") {
-  return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
 }
 
 function valueOrUnset(value, fallback = "Not set") {
@@ -395,35 +372,9 @@ function renderDashboard(data) {
     : syncStatus === "disabled"
       ? "warn"
       : "neutral";
-  const telegramTone = data.telegram.configured
-    ? data.telegram.webhookListening || !data.telegram.webhook
-      ? "ok"
-      : "warn"
-    : "warn";
-  const keepaliveConfigured = data.keepalive?.configured === true;
-  const keepaliveStatus = String(
-    data.keepalive?.status ||
-      (process.env.CLOUDFLARE_WORKERS_TOKEN ? "pending" : "not configured"),
-  );
-  const keepAliveTone = keepaliveConfigured
-    ? "ok"
-    : process.env.CLOUDFLARE_WORKERS_TOKEN
-      ? "warn"
-      : "neutral";
-  const telegramDetail = data.telegram.configured
-    ? `${data.telegram.webhook ? "Webhook" : "Polling"}${data.telegram.proxy ? " via CF proxy" : ""}`
-    : "Not configured";
   const backupDetail = data.backup?.message
     ? escapeHtml(data.backup.message)
     : "No status yet";
-  const keepAliveDetail = keepaliveConfigured
-    ? `Pinging <code>${escapeHtml(data.keepalive.targetUrl || "/health")}</code>`
-    : keepaliveStatus === "error" && data.keepalive?.message
-      ? escapeHtml(data.keepalive.message)
-      : process.env.CLOUDFLARE_WORKERS_TOKEN
-        ? "Worker pending or failed"
-        : "Not configured";
-  const serviceOk = data.gateway && data.dashboard;
 
   // Check if Chrome VNC is available (noVNC on port 6080)
   const chromeVncAvailable = data.chromeVnc || false;
@@ -454,15 +405,6 @@ function renderDashboard(data) {
       tone: "neutral",
     }),
     renderTile({
-      title: "Telegram",
-      value: toneBadge(
-        data.telegram.configured ? "Configured" : "Disabled",
-        telegramTone,
-      ),
-      detail: telegramDetail,
-      tone: telegramTone,
-    }),
-    renderTile({
       title: "Backup",
       value: toneBadge(syncStatus.toUpperCase(), syncTone),
       detail: backupDetail,
@@ -470,15 +412,6 @@ function renderDashboard(data) {
       meta: data.backup?.timestamp
         ? `<span class="local-time" data-iso="${data.backup.timestamp}"></span>`
         : "",
-    }),
-    renderTile({
-      title: "Keep Awake",
-      value: toneBadge(
-        keepaliveConfigured ? "CF Cron" : keepaliveStatus.toUpperCase(),
-        keepAliveTone,
-      ),
-      detail: keepAliveDetail,
-      tone: keepAliveTone,
     }),
     renderTile({
       title: "Chrome VNC",
@@ -605,11 +538,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (path === "/telegram" || path.startsWith("/telegram/")) {
-    proxyRequest(req, res, TELEGRAM_WEBHOOK_PORT);
-    return;
-  }
-
   if (path === APP_BASE || path.startsWith(`${APP_BASE}/`)) {
     if (!requireAuth(req, res)) return;
     proxyRequest(
@@ -696,8 +624,7 @@ server.listen(PORT, "0.0.0.0", () => {
 });
 
 // ── WebSocket upgrade proxy ──
-// Dashboard chat and TUI use WebSocket connections to the dashboard/gateway.
-// HF Spaces only exposes one port, so we must proxy WS upgrades through here.
+// Routes WebSocket upgrades to the appropriate internal service.
 server.on("upgrade", (req, socket, head) => {
   const parsed = new URL(req.url, "http://localhost");
   const path = parsed.pathname;
@@ -706,7 +633,7 @@ server.on("upgrade", (req, socket, head) => {
   let targetPort = null;
   let targetPath = req.url;
 
-  // Dashboard WebSocket (chat TUI, live updates)
+  // Dashboard WebSocket
   if (path.startsWith(`${APP_BASE}/`)) {
     if (!isAuthorized(req)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");

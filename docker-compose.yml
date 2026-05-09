@@ -1,5 +1,4 @@
 services:
-  # HuggingMes (Hermes Agent)
   huggingmes:
     build:
       context: .
@@ -12,14 +11,9 @@ services:
       LLM_MODEL: ${LLM_MODEL:-openrouter/anthropic/claude-sonnet-4}
       LLM_API_KEY: ${LLM_API_KEY:-}
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:-local-dev-token}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
       HF_TOKEN: ${HF_TOKEN:-}
       SPACE_HOST: ${SPACE_HOST:-localhost:7861}
-      # Chrome VNC support (noVNC on port 6080)
-      CHROME_VNC_ENABLED: "true"
-      CHROME_VNC_PORT: 6080
-      # Browserbase cloud browser (anti-detection + CAPTCHA solving)
+      # Browserbase cloud browser (optional)
       BROWSERBASE_API_KEY: ${BROWSERBASE_API_KEY:-}
       BROWSERBASE_PROJECT_ID: ${BROWSERBASE_PROJECT_ID:-}
       BROWSERBASE_PROXIES: ${BROWSERBASE_PROXIES:-true}

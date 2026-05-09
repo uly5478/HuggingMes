@@ -3,29 +3,21 @@ set -euo pipefail
 
 umask 0077
 
-# ════════════════════════════════════════════════════════════════
-# HuggingMes — Hermes Gateway for HF Spaces
-# ════════════════════════════════════════════════════════════════
-
-# ── Startup Banner ──
 APP_DIR="${HUGGINGMES_APP_DIR:-/opt/huggingmes}"
 HERMES_HOME="${HERMES_HOME:-/opt/data}"
 PUBLIC_PORT="${PORT:-7861}"
 GATEWAY_API_PORT="${API_SERVER_PORT:-8642}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-9119}"
-TELEGRAM_WEBHOOK_PORT="${TELEGRAM_WEBHOOK_PORT:-8765}"
 SYNC_INTERVAL="${SYNC_INTERVAL:-600}"
 BACKUP_DATASET="${BACKUP_DATASET_NAME:-huggingmes-backup}"
-CF_PROXY_ENV_FILE="/tmp/huggingmes-cloudflare-proxy.env"
 
 export HERMES_HOME
 export API_SERVER_ENABLED="${API_SERVER_ENABLED:-true}"
 export API_SERVER_HOST="${API_SERVER_HOST:-127.0.0.1}"
 export API_SERVER_PORT="$GATEWAY_API_PORT"
 export GATEWAY_HEALTH_URL="${GATEWAY_HEALTH_URL:-http://127.0.0.1:${GATEWAY_API_PORT}}"
-export TELEGRAM_WEBHOOK_PORT
 
-# ── Browser automation: ensure agent-browser can find Chromium ──
+
 if [ -z "${AGENT_BROWSER_EXECUTABLE_PATH:-}" ]; then
   # Try Playwright's Chromium first
   PW_CHROME=$(find "${PLAYWRIGHT_BROWSERS_PATH:-/opt/hermes/.playwright}" -name "chrome" -path "*/chrome-linux/*" 2>/dev/null | head -1)
@@ -36,7 +28,7 @@ fi
 
 echo ""
 echo "  ╔══════════════════════════════════════════╗"
-echo "  ║        💬 HuggingMes Hermes Gateway      ║"
+echo "  ║           💬 HuggingMes                  ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo ""
 
@@ -70,51 +62,6 @@ if [ -n "${HF_TOKEN:-}" ]; then
   python3 "$APP_DIR/hermes-sync.py" restore || true
 else
   echo "HF_TOKEN not set - dataset persistence is disabled."
-fi
-
-CLOUDFLARE_WORKERS_TOKEN="${CLOUDFLARE_WORKERS_TOKEN:-${CLOUDFLARE_API_TOKEN:-}}"
-export CLOUDFLARE_WORKERS_TOKEN
-if [ -n "${CLOUDFLARE_WORKERS_TOKEN:-}" ] || [ -n "${CLOUDFLARE_PROXY_URL:-}" ]; then
-  export CLOUDFLARE_PROXY_DEBUG="${CLOUDFLARE_PROXY_DEBUG:-false}"
-  echo "Preparing Cloudflare Telegram proxy..."
-  python3 "$APP_DIR/cloudflare-proxy-setup.py" || true
-  if [ -f "$CF_PROXY_ENV_FILE" ]; then
-    . "$CF_PROXY_ENV_FILE"
-  fi
-fi
-
-if [ -n "${CLOUDFLARE_WORKERS_TOKEN:-}" ]; then
-  echo "Preparing Cloudflare Keepalive worker..."
-  python3 "$APP_DIR/cloudflare-keepalive-setup.py" || true
-fi
-
-if [ -n "${TELEGRAM_USER_IDS:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; then
-  export TELEGRAM_ALLOWED_USERS="$TELEGRAM_USER_IDS"
-elif [ -n "${TELEGRAM_USER_ID:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; then
-  export TELEGRAM_ALLOWED_USERS="$TELEGRAM_USER_ID"
-fi
-
-if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${SPACE_HOST:-}" ] && [ -z "${TELEGRAM_WEBHOOK_URL:-}" ]; then
-  if [ "${TELEGRAM_MODE:-webhook}" != "polling" ]; then
-    export TELEGRAM_WEBHOOK_URL="https://${SPACE_HOST}/telegram"
-  fi
-fi
-
-if [ -n "${TELEGRAM_WEBHOOK_URL:-}" ] && [ -z "${TELEGRAM_WEBHOOK_SECRET:-}" ]; then
-  SECRET_FILE="$HERMES_HOME/.huggingmes-telegram-webhook-secret"
-  if [ -f "$SECRET_FILE" ]; then
-    export TELEGRAM_WEBHOOK_SECRET
-    TELEGRAM_WEBHOOK_SECRET="$(cat "$SECRET_FILE")"
-  else
-    TELEGRAM_WEBHOOK_SECRET="$(python3 - <<'PY'
-import secrets
-print(secrets.token_hex(32))
-PY
-)"
-    printf '%s' "$TELEGRAM_WEBHOOK_SECRET" > "$SECRET_FILE"
-    chmod 600 "$SECRET_FILE"
-    export TELEGRAM_WEBHOOK_SECRET
-  fi
 fi
 
 MODEL_INPUT="${HERMES_MODEL:-${LLM_MODEL:-}}"
@@ -218,14 +165,6 @@ export CUSTOM_BASE_URL="${CUSTOM_BASE_URL:-}"
 export CUSTOM_API_KEY="${CUSTOM_API_KEY:-${LLM_API_KEY:-}}"
 export CUSTOM_MODEL_CONTEXT_LENGTH="${CUSTOM_MODEL_CONTEXT_LENGTH:-131072}"
 export CUSTOM_MODEL_MAX_TOKENS="${CUSTOM_MODEL_MAX_TOKENS:-8192}"
-export TELEGRAM_BASE_URL="${TELEGRAM_BASE_URL:-}"
-export TELEGRAM_BASE_FILE_URL="${TELEGRAM_BASE_FILE_URL:-}"
-
-if [ -n "${CLOUDFLARE_PROXY_URL:-}" ] && [ -z "$TELEGRAM_BASE_URL" ]; then
-  CLOUDFLARE_PROXY_URL="${CLOUDFLARE_PROXY_URL%/}"
-  export TELEGRAM_BASE_URL="${CLOUDFLARE_PROXY_URL}/bot"
-  export TELEGRAM_BASE_FILE_URL="${CLOUDFLARE_PROXY_URL}/file/bot"
-fi
 
 # ── Build config ──
 python3 - <<'PY'
@@ -281,36 +220,10 @@ browser_cfg.setdefault("inactivity_timeout", 120)
 if os.environ.get("BROWSERBASE_API_KEY") and os.environ.get("BROWSERBASE_PROJECT_ID"):
     browser_cfg["cloud_provider"] = "browserbase"
 
-# Configure CDP URL for remote Chrome (e.g. via ngrok/cloudflare tunnel)
+# Configure CDP URL for remote Chrome
 cdp_url = os.environ.get("BROWSER_CDP_URL", "").strip()
 if cdp_url:
     browser_cfg["cdp_url"] = cdp_url
-
-# Ensure browser toolset is included in platform_toolsets
-platform_toolsets = config.setdefault("platform_toolsets", {})
-for platform_key in ("cli", "telegram", "discord", "whatsapp", "slack"):
-    preset = platform_toolsets.get(platform_key)
-    # If using a preset list, ensure browser is included
-    if isinstance(preset, list) and "browser" not in preset:
-        # Only add if not already using a hermes-* preset (which includes browser)
-        if not any(p.startswith("hermes-") for p in preset):
-            preset.append("browser")
-
-platforms = config.setdefault("platforms", {})
-
-if os.environ.get("TELEGRAM_BOT_TOKEN"):
-    telegram = platforms.setdefault("telegram", {})
-    telegram.setdefault("enabled", True)
-    extra = telegram.setdefault("extra", {})
-    if os.environ.get("TELEGRAM_BASE_URL"):
-        extra.setdefault("base_url", os.environ["TELEGRAM_BASE_URL"])
-        extra.setdefault("base_file_url", os.environ.get("TELEGRAM_BASE_FILE_URL") or os.environ["TELEGRAM_BASE_URL"])
-    if os.environ.get("TELEGRAM_ALLOWED_USERS"):
-        config.setdefault("telegram", {}).setdefault("allow_from", [
-            item.strip()
-            for item in os.environ["TELEGRAM_ALLOWED_USERS"].split(",")
-            if item.strip()
-        ])
 
 path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 path.chmod(0o600)
@@ -320,21 +233,12 @@ PY
 echo ""
 echo "Model     : ${MODEL_FOR_CONFIG:-unset}"
 echo "Provider  : ${PROVIDER_FOR_CONFIG:-unset}"
-if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-  echo "Telegram  : enabled"
-else
-  echo "Telegram  : not configured"
-fi
 if [ -n "${HF_TOKEN:-}" ]; then
   echo "Backup    : ${BACKUP_DATASET} (every ${SYNC_INTERVAL:-600}s)"
 else
   echo "Backup    : disabled"
 fi
-if [ -n "${CLOUDFLARE_PROXY_URL:-}" ]; then
-  echo "Proxy     : ${CLOUDFLARE_PROXY_URL}"
-fi
 echo "Dashboard : http://127.0.0.1:${DASHBOARD_PORT}"
-echo "Gateway   : http://127.0.0.1:${GATEWAY_API_PORT}"
 echo ""
 
 # ── Trap SIGTERM for graceful shutdown ──
@@ -435,7 +339,6 @@ if [ "$ready" != "true" ]; then
   exit 1
 fi
 
-# ── Launch dashboard AFTER gateway is ready (TUI chat needs gateway) ──
 echo "Launching Hermes dashboard on 0.0.0.0:${DASHBOARD_PORT}..."
 export TERM="${TERM:-xterm-256color}"
 export HOME="${HOME:-/opt/data/home}"

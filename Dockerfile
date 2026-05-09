@@ -67,13 +67,10 @@ COPY --chown=hermes:hermes start.sh /opt/huggingmes/start.sh
 COPY --chown=hermes:hermes health-server.js /opt/huggingmes/health-server.js
 COPY --chown=hermes:hermes hermes-sync.py /opt/huggingmes/hermes-sync.py
 COPY --chown=hermes:hermes cloudflare-proxy-setup.py /opt/huggingmes/cloudflare-proxy-setup.py
-COPY --chown=hermes:hermes cloudflare-keepalive-setup.py /opt/huggingmes/cloudflare-keepalive-setup.py
 
 RUN chmod +x \
     /opt/huggingmes/start.sh \
-    /opt/huggingmes/hermes-sync.py \
-    /opt/huggingmes/cloudflare-proxy-setup.py \
-    /opt/huggingmes/cloudflare-keepalive-setup.py
+    /opt/huggingmes/hermes-sync.py 
 
 # ── Patch kanban migration: wrap ALTER TABLE ADD COLUMN in try/except ──
 # Prevents startup crashes on existing databases where the column already exists
