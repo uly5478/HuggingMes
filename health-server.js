@@ -307,6 +307,7 @@ async function statusPayload() {
   const telegramWebhook =
     !!process.env.TELEGRAM_WEBHOOK_URL &&
     (await canConnect(TELEGRAM_WEBHOOK_PORT));
+  const chromeVnc = await canConnect(3000); // Chrome VNC port
   const sync = readJson(
     SYNC_STATUS_FILE,
     process.env.HF_TOKEN
@@ -323,12 +324,14 @@ async function statusPayload() {
     startedAt: new Date(startTime).toISOString(),
     gateway,
     dashboard,
+    chromeVnc,
     authConfigured: !!API_SERVER_KEY,
     ports: {
       public: PORT,
       gateway: GATEWAY_PORT,
       dashboard: DASHBOARD_PORT,
       telegramWebhook: TELEGRAM_WEBHOOK_PORT,
+      chromeVnc: 3000,
     },
     telegram: {
       configured: !!process.env.TELEGRAM_BOT_TOKEN,
@@ -422,6 +425,10 @@ function renderDashboard(data) {
         : "Not configured";
   const serviceOk = data.gateway && data.dashboard;
 
+  // Check if Chrome VNC is available
+  const chromeVncAvailable = data.chromeVnc || false;
+  const chromeVncUrl = chromeVncAvailable ? `http://localhost:3000` : null;
+
   const tiles = [
     renderTile({
       title: "Gateway",
@@ -473,6 +480,18 @@ function renderDashboard(data) {
       ),
       detail: keepAliveDetail,
       tone: keepAliveTone,
+    }),
+    renderTile({
+      title: "Chrome VNC",
+      value: toneBadge(
+        chromeVncAvailable ? "Online" : "Offline",
+        chromeVncAvailable ? "ok" : "off",
+      ),
+      detail: chromeVncAvailable
+        ? `VNC on port 5900`
+        : `Not available`,
+      tone: chromeVncAvailable ? "ok" : "off",
+      meta: chromeVncAvailable ? "Ready for use" : "Start chrome-vnc service",
     }),
   ].join("");
 
@@ -530,6 +549,7 @@ function renderDashboard(data) {
       <div class="subtitle">Self-hosted - Hermes Agent</div>
     </header>
     <a class="hero-action" href="${APP_BASE}/" target="_blank" rel="noopener noreferrer">Open Hermes Agent -></a>
+    ${chromeVncAvailable ? `<a class="hero-action" href="${chromeVncUrl}" target="_blank" rel="noopener noreferrer">Open Chrome VNC -></a>` : ''}
     <section class="overview">
       ${tiles}
     </section>

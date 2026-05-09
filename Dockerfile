@@ -67,6 +67,45 @@ RUN chmod +x \
     /opt/huggingmes/cloudflare-proxy-setup.py \
     /opt/huggingmes/cloudflare-keepalive-setup.py
 
+# ── Patch kanban migration: wrap ALTER TABLE ADD COLUMN in try/except ──
+# Prevents startup crashes on existing databases where the column already exists
+RUN python3 - <<'PY'
+from pathlib import Path
+import sys
+
+p = Path("/opt/hermes/hermes_cli/kanban_db.py")
+if not p.exists():
+    sys.exit(0)
+
+src = p.read_text(encoding="utf-8")
+sentinel = "# huggingmes: idempotent-alter"
+if sentinel in src:
+    sys.exit(0)
+
+old = (
+    '    conn.execute(\n'
+    '        "ALTER TABLE tasks ADD COLUMN consecutive_failures "\n'
+    '        "INTEGER NOT NULL DEFAULT 0"\n'
+    '    )'
+)
+new = (
+    f'    try:  {sentinel}\n'
+    '        conn.execute(\n'
+    '            "ALTER TABLE tasks ADD COLUMN consecutive_failures "\n'
+    '            "INTEGER NOT NULL DEFAULT 0"\n'
+    '        )\n'
+    '    except Exception:\n'
+    '        pass'
+)
+
+if old not in src:
+    print("kanban patch: pattern not found — may be fixed upstream, skipping")
+    sys.exit(0)
+
+p.write_text(src.replace(old, new), encoding="utf-8")
+print("kanban patch: applied")
+PY
+
 # ── Permissions: ensure hermes user can access everything ──
 RUN chmod -R a+rX /opt/hermes \
     && mkdir -p /opt/data \

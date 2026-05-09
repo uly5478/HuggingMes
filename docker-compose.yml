@@ -1,4 +1,26 @@
 services:
+  # Chrome with VNC for remote browser access
+  chrome-vnc:
+    image: browserless/chrome:latest
+    container_name: huggingmes-chrome-vnc
+    ports:
+      - "3000:3000"    # Chrome HTTP API
+      - "5900:5900"    # VNC (for visual access)
+    environment:
+      - CHROME_ENABLED=1
+      - MAX_CONCURRENT=1
+      - MAX_SESSION_TIMEOUT=3600000
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1080
+      - SCREEN_DEPTH=16
+      - ENABLE_DEBUGGER=1
+      - PREVENT_REMOVE=1
+      - VNC_PASSWORD=${GATEWAY_TOKEN:-local-dev-token}
+    volumes:
+      - chrome-data:/data
+    restart: unless-stopped
+
+  # HuggingMes (Hermes Agent)
   huggingmes:
     build:
       context: .
@@ -15,6 +37,8 @@ services:
       TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
       HF_TOKEN: ${HF_TOKEN:-}
       SPACE_HOST: ${SPACE_HOST:-localhost:7861}
+      # Chrome CDP connection (for Hermes Agent automation)
+      BROWSER_CDP_URL: ws://chrome-vnc:3000
       # Browserbase cloud browser (anti-detection + CAPTCHA solving)
       BROWSERBASE_API_KEY: ${BROWSERBASE_API_KEY:-}
       BROWSERBASE_PROJECT_ID: ${BROWSERBASE_PROJECT_ID:-}
@@ -22,6 +46,9 @@ services:
       BROWSERBASE_ADVANCED_STEALTH: ${BROWSERBASE_ADVANCED_STEALTH:-false}
     volumes:
       - huggingmes-data:/opt/data
+    depends_on:
+      - chrome-vnc
 
 volumes:
   huggingmes-data:
+  chrome-data:
